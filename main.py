@@ -137,7 +137,6 @@ def main():
             with st.expander("Runtime Output", expanded=False):
                 st.text(runtime_output)
 
-            # Evaluate the test with LLMJ after each attempt
             evaluation_result = evaluate_test_with_llmj(feature_prompt, context_texts, generated_code, compiler_output, runtime_output)
             
             with st.expander("LLM Evaluation", expanded=False):
