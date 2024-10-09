@@ -1,0 +1,1650 @@
+2. Directives
+852 This chapter describes the syntax and behavior of the OpenACC directives. In C and C++, Open853 ACC directives are specified using the #pragma mechanism provided by the language. In Fortran,
+854 OpenACC directives are specified using special comments that are identified by a unique sentinel.
+855 Compilers will typically ignore OpenACC directives if support is disabled or not provided.
+856 2.1 Directive Format
+857 In C and C++, OpenACC directives are specified with the #pragma mechanism. The syntax of an
+858 OpenACC directive is:
+859 #pragma acc directive-name [clause-list] new-line
+860 Each directive starts with #pragma acc. The remainder of the directive follows the C and C++
+861 conventions for pragmas. Whitespace may be used before and after the #; whitespace may be
+862 required to separate words in a directive. Preprocessing tokens following the #pragma acc are
+863 subject to macro replacement. Directives are case-sensitive.
+864 In Fortran, OpenACC directives are specified in free-form source files as
+865 !$acc directive-name [clause-list]
+866 The comment prefix (!) may appear in any column, but may only be preceded by whitespace (spaces
+867 and tabs). The sentinel (!$acc) must appear as a single word, with no intervening whitespace.
+868 Line length, whitespace, and continuation rules apply to the directive line. Initial directive lines
+869 must have whitespace after the sentinel. Continued directive lines must have an ampersand (&) as
+870 the last nonblank character on the line, prior to any comment placed in the directive. Continuation
+871 directive lines must begin with the sentinel (possibly preceded by whitespace) and may have an
+872 ampersand as the first non-whitespace character after the sentinel. Comments may appear on the
+873 same line as a directive, starting with an exclamation point and extending to the end of the line. If
+874 the first nonblank character after the sentinel is an exclamation point, the line is ignored.
+875 In Fortran fixed-form source files, OpenACC directives are specified as one of
+876 !$acc directive-name [clause-list]
+877 c$acc directive-name [clause-list]
+878 *$acc directive-name [clause-list]
+879 The sentinel (!$acc, c$acc, or *$acc) must occupy columns 1-5. Fixed form line length,
+880 whitespace, continuation, and column rules apply to the directive line. Initial directive lines must
+881 have a space or zero in column 6, and continuation directive lines must have a character other than
+882 a space or zero in column 6. Comments may appear on the same line as a directive, starting with an
+883 exclamation point on or after column 7 and continuing to the end of the line.
+884 In Fortran, directives are case-insensitive. Directives cannot be embedded within continued state885 ments, and statements must not be embedded within continued directives. In this document, free
+886 form is used for all Fortran OpenACC directive examples.
+887 Only one directive-name can appear per directive, except that a combined directive name is consid888 ered a single directive-name.
+27
+The OpenACC
+R API Version 3.3 2.3. Internal Control Variables
+889 The order in which clauses appear is not significant unless otherwise specified. A program must not
+890 depend on the order of evaluation of expressions in clause arguments or on any side effects of the
+891 evaluations. (See examples below.) Clauses may be repeated unless otherwise specified.
+892 H H
+893 Examples
+894
+895 • In the following example, the order and number of evaluations of ++i and calls to foo()
+896 and bar() are unspecified.
+897 #pragma acc parallel \
+898 num_gangs(foo(++i)) \
+899 num_workers(bar(++i)) \
+900 async(foo(++i))
+901 { ... }
+902 See Section 2.5.1 for the parallel construct.
+903 • In the following example, if the implementation knows that array is not present in the
+904 current device memory, it may omit calling size().
+905 #pragma acc update \
+906 device(array[0:size()])
+907 if_present
+908 See Section 2.14.4 for the update directive.
+909 N N
+910
+911 2.2 Conditional Compilation
+912 The _OPENACC macro name is defined to have a value yyyymm where yyyy is the year and mm is
+913 the month designation of the version of the OpenACC directives supported by the implementation.
+914 This macro must be defined by a compiler only when OpenACC directives are enabled. The version
+915 described here is 202211.
+916 2.3 Internal Control Variables
+917 An OpenACC implementation acts as if there are internal control variables (ICVs) that control the
+918 behavior of the program. These ICVs are initialized by the implementation, and may be given
+919 values through environment variables and through calls to OpenACC API routines. The program
+920 can retrieve values through calls to OpenACC API routines.
+921 The ICVs are:
+922 • acc-current-device-type-var - controls which type of device is used.
+923 • acc-current-device-num-var - controls which device of the selected type is used.
+924 • acc-default-async-var - controls which asynchronous queue is used when none appears in an
+925 async clause.
+28
+The OpenACC
+R API Version 3.3 2.4. Device-Specific Clauses
+926 2.3.1 Modifying and Retrieving ICV Values
+927 The following table shows environment variables or procedures to modify the values of the internal
+928 control variables, and procedures to retrieve the values:
+ICV Ways to modify values Way to retrieve value
+acc-current-device-type-var acc_set_device_type acc_get_device_type
+set device_type
+init device_type
+ACC_DEVICE_TYPE
+acc-current-device-num-var acc_set_device_num acc_get_device_num
+set device_num
+init device_num
+ACC_DEVICE_NUM
+acc-default-async-var acc_set_default_async acc_get_default_async
+set default_async
+929
+930 The initial values are implementation-defined. After initial values are assigned, but before any
+931 OpenACC construct or API routine is executed, the values of any environment variables that were
+932 set by the user are read and the associated ICVs are modified accordingly. There is one copy of
+933 each ICV for each host thread that is not generated by a compute construct. For threads that are
+934 generated by a compute construct the initial value for each ICV is inherited from the local thread.
+935 The behavior for each ICV is as if there is a copy for each thread. If an ICV is modified, then a
+936 unique copy of that ICV must be created for the modifying thread.
+937 2.4 Device-Specific Clauses
+938 OpenACC directives can specify different clauses or clause arguments for different devices using
+939 the device_type clause. Clauses that precede any device_type clause are default clauses.
+940 Clauses that follow a device_type clause up to the end of the directive or up to the next
+941 device_type clause are device-specific clausesfor the device types specified in the device_type
+942 argument. For each directive, only certain clauses may be device-specific clauses. If a directive has
+943 at least one device-specific clause, it is device-dependent, and otherwise it is device-independent.
+944 The argument to the device_type clause is a comma-separated list of one or more device ar945 chitecture name identifiers, or an asterisk. An asterisk indicates all device types that are not named
+946 in any other device_type clause on that directive. A single directive may have one or several
+947 device_type clauses. The device_type clauses may appear in any order.
+948 Except where otherwise noted, the rest of this document describes device-independent directives, on
+949 which all clauses apply when compiling for any device type. When compiling a device-dependent
+950 directive for a particular device type, the directive is treated as if the only clauses that appear are (a)
+951 the clauses specific to that device type and (b) all default clauses for which there are no like-named
+952 clauses specific to that device type. If, for any device type, the resulting directive is nonconforming,
+953 then the original directive is nonconforming.
+954 The supported device types are implementation-defined. Depending on the implementation and the
+955 compiling environment, an implementation may support only a single device type, or may support
+956 multiple device types but only one at a time, or may support multiple device types in a single
+957 compilation.
+29
+The OpenACC
+R API Version 3.3 2.4. Device-Specific Clauses
+958 A device architecture name may be generic, such as a vendor, or more specific, such as a partic959 ular generation of device; see Appendix A Recommendations for Implementers for recommended
+960 names. When compiling for a particular device, the implementation will use the clauses associated
+961 with the device_type clause that specifies the most specific architecture name that applies for
+962 this device; clauses associated with any other device_type clause are ignored. In this context,
+963 the asterisk is the least specific architecture name.
+964 Syntax
+965 The syntax of the device_type clause is
+966 device_type( * )
+967 device_type( device-type-list )
+968
+969 The device_type clause may be abbreviated to dtype.
+970 H H
+971 Examples
+972
+973 • On the following directive, worker appears as a device-specific clause for devices of type
+974 foo, but gang appears as a default clause and so applies to all device types, including foo.
+975 #pragma acc loop gang device_type(foo) worker
+976 • The first directive below is identical to the previous directive except that loop is replaced
+977 with routine. Unlike loop, routine does not permit gang to appear with worker,
+978 but both apply for device type foo, so the directive is nonconforming. The second directive
+979 below is conforming because gang there applies to all device types except foo.
+980 // nonconforming: gang and worker not permitted together
+981 #pragma acc routine gang device_type(foo) worker
+982
+983 // conforming: gang and worker for different device types
+984 #pragma acc routine device_type(foo) worker \
+985 device_type(*) gang
+986 • On the directive below, the value of num_gangs is 4 for device type foo, but it is 2 for all
+987 other device types, including bar. That is, foo has a device-specific num_gangs clause,
+988 so the default num_gangs clause does not apply to foo.
+989 !$acc parallel num_gangs(2) &
+990 !$acc device_type(foo) num_gangs(4) &
+991 !$acc device_type(bar) num_workers(8)
+992 • The directive below is the same as the previous directive except that num_gangs(2) has
+993 moved after device_type(*) and so now does not apply to foo or bar.
+994 !$acc parallel device_type(*) num_gangs(2) &
+995 !$acc device_type(foo) num_gangs(4) &
+996 !$acc device_type(bar) num_workers(8)
+997 N N
+998
+30
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+999 2.5 Compute Constructs
+1000 Compute constructs indicate code that should be executed on the current device. It is implementa1001 tion defined how users specify for which accelerators that code is compiled and whether it is also
+1002 compiled for the host.
+1003 2.5.1 Parallel Construct
+1004 Summary
+1005 This fundamental construct starts parallel execution on the current device.
+1006 Syntax
+1007 In C and C++, the syntax of the OpenACC parallel construct is
+1008 #pragma acc parallel [clause-list] new-line
+1009 structured block
+1010
+1011 and in Fortran, the syntax is
+1012 !$acc parallel [ clause-list ]
+1013 structured block
+1014 !$acc end parallel
+1015 or
+1016 !$acc parallel [ clause-list ]
+1017 block construct
+1018 [!$acc end parallel]
+1019 where clause is one of the following:
+1020 async [ ( int-expr ) ]
+1021 wait [ ( int-expr-list ) ]
+1022 num_gangs( int-expr-list )
+1023 num_workers( int-expr )
+1024 vector_length( int-expr )
+1025 device_type( device-type-list )
+1026 if( condition )
+1027 self [ ( condition ) ]
+1028 reduction( operator : var-list )
+1029 copy( var-list )
+1030 copyin( [ readonly: ] var-list )
+1031 copyout( [ zero: ] var-list )
+1032 create( [ zero: ] var-list )
+1033 no_create( var-list )
+1034 present( var-list )
+1035 deviceptr( var-list )
+1036 attach( var-list )
+1037 private( var-list )
+1038 firstprivate( var-list )
+1039 default( none | present )
+31
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+1040 Description
+1041 When the program encounters an accelerator parallel construct, one or more gangs of workers
+1042 are created to execute the accelerator parallel region. The number of gangs, and the number of
+1043 workers in each gang and the number of vector lanes per worker remain constant for the duration of
+1044 that parallel region. Each gang begins executing the code in the structured block in gang-redundant
+1045 mode even if there is only a single gang. This means that code within the parallel region, but outside
+1046 of a loop construct with gang-level worksharing, will be executed redundantly by all gangs.
+1047 One worker in each gang begins executing the code in the structured block of the construct. Note:
+1048 Unless there is a loop construct within the parallel region, all gangs will execute all the code within
+1049 the region redundantly.
+1050 If the async clause does not appear, there is an implicit barrier at the end of the accelerator parallel
+1051 region, and the execution of the local thread will not proceed until all gangs have reached the end
+1052 of the parallel region.
+1053 The copy, copyin, copyout, create, no_create, present, deviceptr, and attach
+1054 data clauses are described in Section 2.7 Data Clauses. The private and firstprivate
+1055 clauses are described in Sections 2.5.13 and Sections 2.5.14. The device_type clause is de1056 scribed in Section 2.4 Device-Specific Clauses. Implicitly determined data attributes are described
+1057 in Section 2.6.2. Restrictions are described in Section 2.5.4.
+1058 2.5.2 Serial Construct
+1059 Summary
+1060 This construct defines a region of the program that is to be executed sequentially on the current
+1061 device. The behavior of the serial construct is the same as that of the parallel construct
+1062 except that it always executes with a single gang of a single worker with a vector length of one.
+1063 Note: The serial construct may be used to execute sequential code on the current device,
+1064 which removes the need for data movement when the required data is already present on the device.
+1065 Syntax
+1066 In C and C++, the syntax of the OpenACC serial construct is
+1067 #pragma acc serial [clause-list] new-line
+1068 structured block
+1069
+1070 and in Fortran, the syntax is
+1071 !$acc serial [ clause-list ]
+1072 structured block
+1073 !$acc end serial
+1074 or
+1075 !$acc serial [ clause-list ]
+1076 block construct
+1077 [!$acc end serial]
+1078 where clause is as for the parallel construct except that the num_gangs, num_workers, and
+1079 vector_length clauses are not permitted.
+32
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+1080 2.5.3 Kernels Construct
+1081 Summary
+1082 This construct defines a region of the program that is to be compiled into a sequence of kernels for
+1083 execution on the current device.
+1084 Syntax
+1085 In C and C++, the syntax of the OpenACC kernels construct is
+1086 #pragma acc kernels [ clause-list ] new-line
+1087 structured block
+1088
+1089 and in Fortran, the syntax is
+1090 !$acc kernels [ clause-list ]
+1091 structured block
+1092 !$acc end kernels
+1093 or
+1094 !$acc kernels [ clause-list ]
+1095 block construct
+1096 [!$acc end kernels]
+1097 where clause is one of the following:
+1098 async [ ( int-expr ) ]
+1099 wait [ ( int-expr-list ) ]
+1100 num_gangs( int-expr )
+1101 num_workers( int-expr )
+1102 vector_length( int-expr )
+1103 device_type( device-type-list )
+1104 if( condition )
+1105 self [ ( condition ) ]
+1106 copy( var-list )
+1107 copyin( [ readonly: ] var-list )
+1108 copyout( [ zero: ] var-list )
+1109 create( [ zero: ] var-list )
+1110 no_create( var-list )
+1111 present( var-list )
+1112 deviceptr( var-list )
+1113 attach( var-list )
+1114 default( none | present )
+1115 Description
+1116 The compiler will split the code in the kernels region into a sequence of accelerator kernels. Typi1117 cally, each loop nest will be a distinct kernel. When the program encounters a kernels construct,
+1118 it will launch the sequence of kernels in order on the device. The number and configuration of gangs
+1119 of workers and vector length may be different for each kernel.
+33
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+1120 If the async clause does not appear, there is an implicit barrier at the end of the kernels region,
+1121 and the local thread execution will not proceed until the entire sequence of kernels has completed
+1122 execution.
+1123 The copy, copyin, copyout, create, no_create, present, deviceptr, and attach
+1124 data clauses are described in Section 2.7 Data Clauses. The device_type clause is described
+1125 in Section 2.4 Device-Specific Clauses. Implicitly determined data attributes are described in Sec1126 tion 2.6.2. Restrictions are described in Section 2.5.4.
+1127 2.5.4 Compute Construct Restrictions
+1128 The following restrictions apply to all compute constructs:
+1129 • A program may not branch into or out of a compute construct.
+1130 • Only the async, wait, num_gangs, num_workers, and vector_length clauses
+1131 may follow a device_type clause.
+1132 • At most one if clause may appear. In Fortran, the condition must evaluate to a scalar logical
+1133 value; in C or C++, the condition must evaluate to a scalar integer value.
+1134 • At most one default clause may appear, and it must have a value of either none or
+1135 present.
+1136 • A reduction clause may not appear on a parallel construct with a num_gangs clause
+1137 that has more than one argument.
+1138 2.5.5 Compute Construct Errors
+1139 • An acc_error_wrong_device_type error is issued if the compute construct was not
+1140 compiled for the current device type. This includes the case when the current device is the
+1141 host multicore.
+1142 • An acc_error_device_type_unavailable error is issued if no device of the cur1143 rent device type is available.
+1144 • An acc_error_device_unavailable error is issued if the current device is not avail1145 able.
+1146 • An acc_error_device_init error is issued if the current device cannot be initialized.
+1147 • An acc_error_execution error is issued if the execution of the compute construct on
+1148 the current device type fails and the failure can be detected.
+1149 • Explicit or implicitly determined data attributes can cause an error to be issued; see Sec1150 tion 2.7.3.
+1151 • An async or wait clause can cause an error to be issued; see Sections 2.16.1 and 2.16.2.
+1152 See Section 5.2.2.
+1153 2.5.6 if clause
+1154 The if clause is optional.
+34
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+1155 When the condition in the if clause evaluates to true., the region will execute on the current device.
+1156 When the condition in the if clause evaluates to false, the local thread will execute the region.
+1157 2.5.7 self clause
+1158 The self clause is optional.
+1159 The self clause may have a single condition-argument. If the condition-argument is not present it
+1160 is assumed to evaluate to true. When both an if clause and a self clause appear and the condition
+1161 in the if clause evaluates to false, the self clause has no effect.
+1162 When the condition evaluates to true, the region will execute on the local device. When the condition
+1163 in the self clause evaluates to false, the region will execute on the current device.
+1164 2.5.8 async clause
+1165 The async clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+1166 2.5.9 wait clause
+1167 The wait clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+1168 2.5.10 num gangs clause
+1169 The num_gangs clause is allowed on the parallel and kernels constructs. On a parallel
+1170 construct, it may have one, two, or three arguments. The values of the integer expressions define
+1171 the number of parallel gangs along dimensions one, two, and three that will execute the parallel
+1172 region. If it has fewer than three arguments, the missing values are treated as having the value 1.
+1173 The total number of gangs must be at least 1 and is the product of the values of the arguments. On a
+1174 kernels construct, the num_gangs clause must have a single argument, the value of which will
+1175 define the number of parallel gangs that will execute each kernel created for the kernels region.
+1176 If the num_gangs clause does not appear, an implementation-defined default will be used which
+1177 may depend on the code within the construct. The implementation may use a lower value than
+1178 specified based on limitations imposed by the target architecture.
+1179 2.5.11 num workers clause
+1180 The num_workers clause is allowed on the parallel and kernels constructs. The value
+1181 of the integer expression defines the number of workers within each gang that will be active after
+1182 a gang transitions from worker-single mode to worker-partitioned mode. If the clause does not
+1183 appear, an implementation-defined default will be used; the default value may be 1, and may be
+1184 different for each parallel construct or for each kernel created for a kernels construct. The
+1185 implementation may use a different value than specified based on limitations imposed by the target
+1186 architecture.
+1187 2.5.12 vector length clause
+1188 The vector_length clause is allowed on the parallel and kernels constructs. The value
+1189 of the integer expression defines the number of vector lanes that will be active after a worker transi1190 tions from vector-single mode to vector-partitioned mode. This clause determines the vector length
+1191 to use for vector or SIMD operations. If the clause does not appear, an implementation-defined
+35
+The OpenACC
+R API Version 3.3 2.5. Compute Constructs
+1192 default will be used. This vector length will be used for loop constructs annotated with the vector
+1193 clause, as well as loops automatically vectorized by the compiler. The implementation may use a
+1194 different value than specified based on limitations imposed by the target architecture.
+1195 2.5.13 private clause
+1196 The private clause is allowed on the parallel and serial constructs; it declares that a copy
+1197 of each item on the list will be created for each gang in all dimensions.
+1198 Restrictions
+1199 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in private
+1200 clauses.
+1201 2.5.14 firstprivate clause
+1202 The firstprivate clause is allowed on the parallel and serial constructs; it declares that
+1203 a copy of each item on the list will be created for each gang, and that the copy will be initialized with
+1204 the value of that item on the local thread when a parallel or serial construct is encountered.
+1205 Restrictions
+1206 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in
+1207 firstprivate clauses.
+1208 2.5.15 reduction clause
+1209 The reduction clause is allowed on the parallel and serial constructs. It specifies a
+1210 reduction operator and one or more vars. It implies copy clauses as described in Section 2.6.2. For
+1211 each reduction var, a private copy is created for each parallel gang and initialized for that operator.
+1212 At the end of the region, the values for each gang are combined using the reduction operator, and
+1213 the result combined with the value of the original var and stored in the original var. If the reduction
+1214 var is an array or subarray, the array reduction operation is logically equivalent to applying that
+1215 reduction operation to each element of the array or subarray individually. If the reduction var
+1216 is a composite variable, the reduction operation is logically equivalent to applying that reduction
+1217 operation to each member of the composite variable individually. The reduction result is available
+1218 after the region.
+1219 The following table lists the operators that are valid and the initialization values; in each case, the
+1220 initialization value will be cast into the data type of the var. For max and min reductions, the
+1221 initialization values are the least representable value and the largest representable value for that data
+1222 type, respectively. At a minimum, the supported data types include Fortran logical as well as
+1223 the numerical data types in C (e.g., _Bool, char, int, float, double, float _Complex,
+1224 double _Complex), C++ (e.g., bool, char, wchar_t, int, float, double), and Fortran
+1225 (e.g., integer, real, double precision, complex). However, for each reduction operator,
+1226 the supported data types include only the types permitted as operands to the corresponding operator
+1227 in the base language where (1) for max and min, the corresponding operator is less-than and (2) for
+1228 other operators, the operands and the result are the same type.
+36
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+C and C++ Fortran
+operator initialization
+value
+operator initialization
+value
++ 0 + 0
+* 1 * 1
+max least max least
+min largest min largest
+& ˜0 iand all bits on
+| 0 ior 0
+ˆ 0 ieor 0
+&& 1 .and. .true.
+|| 0 .or. .false.
+.eqv. .true.
+.neqv. .false.
+1229
+1230 Restrictions
+1231 • A var in a reduction clause must be a scalar variable name, an aggregate variable name,
+1232 an array element, or a subarray (refer to Section 2.7.1).
+1233 • If the reduction var is an array element or a subarray, accessing the elements of the array
+1234 outside the specified index range results in unspecified behavior.
+1235 • The reduction var may not be a member of a composite variable.
+1236 • If the reduction var is a composite variable, each member of the composite variable must be
+1237 a supported datatype for the reduction operation.
+1238 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in
+1239 reduction clauses.
+1240 2.5.16 default clause
+1241 The default clause is optional. At most one default clause may appear. It adjusts what
+1242 data attributes are implicitly determined for variables used in the compute construct as described in
+1243 Section 2.6.2.
+1244 2.6 Data Environment
+1245 This section describes the data attributes for variables. The data attributes for a variable may be
+1246 predetermined, implicitly determined, or explicitly determined. Variables with predetermined data
+1247 attributes may not appear in a data clause that conflicts with that data attribute. Variables with
+1248 implicitly determined data attributes may appear in a data clause that overrides the implicit attribute.
+1249 Variables with explicitly determined data attributes are those which appear in a data clause on a
+1250 data construct, a compute construct, or a declare directive. See Section A.3.3 for recommended
+1251 diagnostics related to data attributes.
+1252 OpenACC supports systems with accelerators that have discrete memory from the host, systems
+1253 with accelerators that share memory with the host, as well as systems where an accelerator shares
+1254 some memory with the host but also has some discrete memory that is not shared with the host.
+1255 In the first case, no data is in shared memory. In the second case, all data is in shared memory.
+1256 In the third case, some data may be in shared memory and some data may be in discrete memory,
+37
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1257 although a single array or aggregate data structure must be allocated completely in shared or discrete
+1258 memory. When a nested OpenACC construct is executed on the device, the default target device for
+1259 that construct is the same device on which the encountering accelerator thread is executing. In that
+1260 case, the target device shares memory with the encountering thread.
+1261 2.6.1 Variables with Predetermined Data Attributes
+1262 The loop variable in a C for statement or Fortran do statement that is associated with a loop
+1263 directive is predetermined to be private to each thread that will execute each iteration of the loop.
+1264 Loop variables in Fortran do statements within a compute construct are predetermined to be private
+1265 to the thread that executes the loop.
+1266 Variables declared in a C block or Fortran block construct that is executed in vector-partitioned
+1267 mode are private to the thread associated with each vector lane. Variables declared in a C block
+1268 or Fortran block construct that is executed in worker-partitioned vector-single mode are private to
+1269 the worker and shared across the threads associated with the vector lanes of that worker. Variables
+1270 declared in a C block or Fortran block construct that is executed in worker-single mode are private
+1271 to the gang and shared across the threads associated with the workers and vector lanes of that gang.
+1272 A procedure called from a compute construct will be annotated as seq, vector, worker, or
+1273 gang, as described Section 2.15 Procedure Calls in Compute Regions. Variables declared in seq
+1274 routine are private to the thread that made the call. Variables declared in vector routine are private
+1275 to the worker that made the call and shared across the threads associated with the vector lanes of
+1276 that worker. Variables declared in worker or gang routine are private to the gang that made the
+1277 call and shared across the threads associated with the workers and vector lanes of that gang.
+1278 2.6.2 Variables with Implicitly Determined Data Attributes
+1279 When implicitly determining data attributes on a compute construct, the following clauses are visi1280 ble and variable accesses are exposed to the compute construct:
+1281 • Visible default clause: The nearest default clause appearing on the compute construct
+1282 or a lexically containing data construct.
+1283 • Visible data clause: Any data clause on the compute construct, a lexically containing data
+1284 construct, or a visible declare directive.
+1285 • Exposed variable access: Any access to the data or address of a variable at a point within the
+1286 compute construct where the variable is not private to a scope lexically enclosed within the
+1287 compute construct.
+1288 Note: In the argument of C’s sizeof operator, the appearance of a variable is not an exposed
+1289 access because neither its data nor its address is accessed. In the argument of a reduction
+1290 clause on an enclosed loop construct, the appearance of a variable that is not otherwise
+1291 privatized is an exposed access to the original variable.
+1292 On a compute or combined construct, if a variable appears in a reduction clause but no other
+1293 data clause, it is treated as if it also appears in a copy clause. Otherwise, for any variable, the
+1294 compiler will implicitly determine its data attribute on a compute construct if all of the following
+1295 conditions are met:
+1296 • There is no default(none) clause visible at the compute construct.
+38
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1297 • An access to the variable is exposed to the compute construct.
+1298 • The variable does not appear in a data clause visible at the compute construct.
+1299 An aggregate variable will be treated as if it appears either:
+1300 • In a present clause if there is a default(present) clause visible at the compute con1301 struct.
+1302 • In a copy clause otherwise.
+1303 A scalar variable will be treated as if it appears either:
+1304 • In a copy clause if the compute construct is a kernels construct.
+1305 • In a firstprivate clause otherwise.
+1306 Note: Any default(none) clause visible at the compute construct applies to both aggregate
+1307 and scalar variables. However, any default(present) clause visible at the compute construct
+1308 applies only to aggregate variables.
+1309 Restrictions
+1310 • If there is a default(none) clause visible at a compute construct, for any variable access
+1311 exposed to the compute construct, the compiler requires the variable to appear either in an
+1312 explicit data clause visible at the compute construct or in a firstprivate, private, or
+1313 reduction clause on the compute construct.
+1314 • If a scalar variable appears in a reduction clause on a loop construct that has a parent
+1315 parallel or serial construct, and if the reduction’s access to the original variable is
+1316 exposed to the parent compute construct, the variable must appear either in an explicit data
+1317 clause visible at the compute construct or in a firstprivate, private, or reduction
+1318 clause on the compute construct. Note: Implementations are encouraged to issue a compile1319 time diagnostic when this restriction is violated to assist users in writing portable OpenACC
+1320 applications.
+1321 If a C++ lambda is called in a compute region and does not appear in a data clause, then it is
+1322 treated as if it appears in a copyin clause on the current construct. A variable captured by a
+1323 lambda is processed according to its data types: a pointer type variable is treated as if it appears
+1324 in a no_create clause; a reference type variable is treated as if it appears in a present clause;
+1325 for a struct or a class type variable, any pointer member is treated as if it appears in a no_create
+1326 clause on the current construct. If the variable is defined as global or file or function static, it must
+1327 appear in a declare directive.
+1328 2.6.3 Data Regions and Data Lifetimes
+1329 Data in shared memory is accessible from the current device as well as to the local thread. Such
+1330 data is available to the accelerator for the lifetime of the variable. Data not in shared memory must
+1331 be copied to and from device memory using data constructs, clauses, and API routines. A data
+1332 lifetime is the duration from when the data is first made available to the accelerator until it becomes
+1333 unavailable. For data in shared memory, the data lifetime begins when the data is allocated and
+1334 ends when it is deallocated; for statically allocated data, the data lifetime begins when the program
+1335 begins and does not end. For data not in shared memory, the data lifetime begins when it is made
+1336 present and ends when it is no longer present.
+39
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1337 There are four types of data regions. When the program encounters a data construct, it creates a
+1338 data region.
+1339 When the program encounters a compute construct with explicit data clauses or with implicit data
+1340 allocation added by the compiler, it creates a data region that has a duration of the compute construct.
+1341 When the program enters a procedure, it creates an implicit data region that has a duration of the
+1342 procedure. That is, the implicit data region is created when the procedure is called, and exited when
+1343 the program returns from that procedure invocation. There is also an implicit data region associated
+1344 with the execution of the program itself. The implicit program data region has a duration of the
+1345 execution of the program.
+1346 In addition to data regions, a program may create and delete data on the accelerator using enter
+1347 data and exit data directives or using runtime API routines. When the program executes
+1348 an enter data directive, or executes a call to a runtime API acc_copyin or acc_create
+1349 routine, each var on the directive or the variable on the runtime API argument list will be made live
+1350 on accelerator.
+1351 2.6.4 Data Structures with Pointers
+1352 This section describes the behavior of data structures that contain pointers. A pointer may be a
+1353 C or C++ pointer (e.g., float*), a Fortran pointer or array pointer (e.g., real, pointer,
+1354 dimension(:)), or a Fortran allocatable (e.g., real, allocatable, dimension(:)).
+1355 When a data object is copied to device memory, the values are copied exactly. If the data is a data
+1356 structure that includes a pointer, or is just a pointer, the pointer value copied to device memory
+1357 will be the host pointer value. If the pointer target object is also allocated in or copied to device
+1358 memory, the pointer itself needs to be updated with the device address of the target object before
+1359 dereferencing the pointer in device memory.
+1360 An attach action updates the pointer in device memory to point to the device copy of the data
+1361 that the host pointer targets; see Section 2.7.2. For Fortran array pointers and allocatable arrays,
+1362 this includes copying any associated descriptor (dope vector) to the device copy of the pointer.
+1363 When the device pointer target is deallocated, the pointer in device memory should be restored
+1364 to the host value, so it can be safely copied back to host memory. A detach action updates the
+1365 pointer in device memory to have the same value as the corresponding pointer in local memory;
+1366 see Section 2.7.2. The attach and detach actions are performed by the copy, copyin, copyout,
+1367 create, attach, and detach data clauses (Sections 2.7.4-2.7.13), and the acc_attach and
+1368 acc_detach runtime API routines (Section 3.2.29). The attach and detach actions use attachment
+1369 counters to determine when the pointer in device memory needs to be updated; see Section 2.6.8.
+1370 2.6.5 Data Construct
+1371 Summary
+1372 The data construct defines vars to be allocated in the current device memory for the duration of
+1373 the region, whether data should be copied from local memory to the current device memory upon
+1374 region entry, and copied from device memory to local memory upon region exit.
+1375 Syntax
+1376 In C and C++, the syntax of the OpenACC data construct is
+40
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1377 #pragma acc data [clause-list] new-line
+1378 structured block
+1379 and in Fortran, the syntax is
+1380 !$acc data [clause-list]
+1381 structured block
+1382 !$acc end data
+1383 or
+1384 !$acc data [clause-list]
+1385 block construct
+1386 [!$acc end data]
+1387 where clause is one of the following:
+1388 if( condition )
+1389 async [( int-expr )]
+1390 wait [( wait-argument )]
+1391 device_type( device-type-list )
+1392 copy( var-list )
+1393 copyin( [readonly:]var-list )
+1394 copyout( [zero:]var-list )
+1395 create( [zero:]var-list )
+1396 no_create( var-list )
+1397 present( var-list )
+1398 deviceptr( var-list )
+1399 attach( var-list )
+1400 default( none | present )
+1401 Description
+1402 Data will be allocated in the memory of the current device and copied from local memory to device
+1403 memory, or copied back, as required. The data clauses are described in Section 2.7 Data Clauses.
+1404 Structured reference counters are incremented for data when entering a data region, and decre1405 mented when leaving the region, as described in Section 2.6.7 Reference Counters. The device_type
+1406 clause is described in Section 2.4 Device-Specific Clauses.
+1407 Restrictions
+1408 • At least one copy, copyin, copyout, create, no_create, present, deviceptr,
+1409 attach, or default clause must appear on a data construct.
+1410 • Only the async and wait clauses may follow a device_type clause.
+1411 if clause
+1412 The if clause is optional; when there is no if clause, the compiler will generate code to allocate
+1413 space in the current device memory and move data from and to the local memory as required. When
+1414 an if clause appears, the program will conditionally allocate memory in and move data to and/or
+1415 from device memory. When the condition in the if clause evaluates to false, no device memory
+1416 will be allocated, and no data will be moved. When the condition evaluates to true, the data will be
+1417 allocated and moved as specified. At most one if clause may appear.
+41
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1418 async clause
+1419 The async clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+1420 Note: The async clause only affects operations directly associated with this particular data con1421 struct, such as data transfers. Execution of the associated structured block or block construct remains
+1422 synchronous to the local thread. Nested OpenACC constructs, directives, and calls to runtime li1423 brary routines do not inherit the async clause from this construct, and the programmer must take
+1424 care to not accidentally introduce race conditions related to asynchronous data transfers.
+1425 wait clause
+1426 The wait clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+1427 default clause
+1428 The default clause is optional. At most one default clause may appear. It adjusts what data
+1429 attributes are implicitly determined for variables used in lexically contained compute constructs as
+1430 described in Section 2.6.2.
+1431 Errors
+1432 • See Section 2.7.3 for errors due to data clauses.
+1433 • See Sections 2.16.1 and 2.16.2 for errors due to async or wait clauses.
+1434 2.6.6 Enter Data and Exit Data Directives
+1435 Summary
+1436 An enter data directive may be used to define vars to be allocated in the current device memory
+1437 for the remaining duration of the program, or until an exit data directive that deallocates the data.
+1438 They also tell whether data should be copied from local memory to device memory at the enter
+1439 data directive, and copied from device memory to local memory at the exit data directive. The
+1440 dynamic range of the program between the enter data directive and the matching exit data
+1441 directive is the data lifetime for that data.
+1442 Syntax
+1443 In C and C++, the syntax of the OpenACC enter data directive is
+1444 #pragma acc enter data clause-list new-line
+1445 and in Fortran, the syntax is
+1446 !$acc enter data clause-list
+1447 where clause is one of the following:
+1448 if( condition )
+1449 async [( int-expr )]
+1450 wait [( wait-argument )]
+1451 copyin( var-list )
+1452 create( [zero:]var-list )
+1453 attach( var-list )
+1454 In C and C++, the syntax of the OpenACC exit data directive is
+42
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1455 #pragma acc exit data clause-list new-line
+1456 and in Fortran, the syntax is
+1457 !$acc exit data clause-list
+1458 where clause is one of the following:
+1459 if( condition )
+1460 async [( int-expr )]
+1461 wait [( wait-argument )]
+1462 copyout( var-list )
+1463 delete( var-list )
+1464 detach( var-list )
+1465 finalize
+1466 Description
+1467 At an enter data directive, data may be allocated in the current device memory and copied from
+1468 local memory to device memory. This action enters a data lifetime for those vars, and will make
+1469 the data available for present clauses on constructs within the data lifetime. Dynamic reference
+1470 counters are incremented for this data, as described in Section 2.6.7 Reference Counters. Pointers
+1471 in device memory may be attached to point to the corresponding device copy of the host pointer
+1472 target.
+1473 At an exit data directive, data may be copied from device memory to local memory and deal1474 located from device memory. If no finalize clause appears, dynamic reference counters are
+1475 decremented for this data. If a finalize clause appears, the dynamic reference counters are set
+1476 to zero for this data. Pointers in device memory may be detached so as to have the same value as
+1477 the original host pointer.
+1478 The data clauses are described in Section 2.7 Data Clauses. Reference counting behavior is de1479 scribed in Section 2.6.7 Reference Counters.
+1480 Restrictions
+1481 • At least one copyin, create, or attach clause must appear on an enter data direc1482 tive.
+1483 • At least one copyout, delete, or detach clause must appear on an exit data direc1484 tive.
+1485 if clause
+1486 The if clause is optional; when there is no if clause, the compiler will generate code to allocate or
+1487 deallocate space in the current device memory and move data from and to local memory. When an
+1488 if clause appears, the program will conditionally allocate or deallocate device memory and move
+1489 data to and/or from device memory. When the condition in the if clause evaluates to false, no
+1490 device memory will be allocated or deallocated, and no data will be moved. When the condition
+1491 evaluates to true, the data will be allocated or deallocated and moved as specified.
+1492 async clause
+1493 The async clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+43
+The OpenACC
+R API Version 3.3 2.6. Data Environment
+1494 wait clause
+1495 The wait clause is optional; see Section 2.16 Asynchronous Behavior for more information.
+1496 finalize clause
+1497 The finalize clause is allowed on the exit data directive and is optional. When no finalize
+1498 clause appears, the exit data directive will decrement the dynamic reference counters for vars
+1499 appearing in copyout and delete clauses, and will decrement the attachment counters for point1500 ers appearing in detach clauses. If a finalize clause appears, the exit data directive will
+1501 set the dynamic reference counters to zero for vars appearing in copyout and delete clauses,
+1502 and will set the attachment counters to zero for pointers appearing in detach clauses.
+1503 Errors
+1504 • See Section 2.7.3 for errors due to data clauses.
+1505 • See Sections 2.16.1 and 2.16.2 for errors due to async or wait clauses.
+1506 2.6.7 Reference Counters
+1507 When device memory is allocated for data not in shared memory due to data clauses or OpenACC
+1508 API routine calls, the OpenACC implementation keeps track of that section of device memory and
+1509 its relationship to the corresponding data in host memory.
+1510 Each section of device memory is associated with two reference counters per device, a structured
+1511 reference counter and a dynamic reference counter. The structured and dynamic reference counters
+1512 are used to determine when to allocate or deallocate data in device memory. The structured reference
+1513 counter for a section of memory keeps track of how many nested data regions have been entered for
+1514 that data. The initial value of the structured reference counter for static data in device memory (in a
+1515 global declare directive) is one; for all other data, the initial value is zero. The dynamic reference
+1516 counter for a section of memory keeps track of how many dynamic data lifetimes are currently active
+1517 in device memory for that section. The initial value of the dynamic reference counter is zero. Data
+1518 is considered present if the sum of the structured and dynamic reference counters is greater than
+1519 zero.
+1520 A structured reference counter is incremented when entering each data or compute region that con1521 tain an explicit data clause or implicitly-determined data attributes for that section of memory, and
+1522 is decremented when exiting that region. A dynamic reference counter is incremented for each
+1523 enter data copyin or create clause, or each acc_copyin or acc_create API routine
+1524 call for that section of memory. The dynamic reference counter is decremented for each exit
+1525 data copyout or delete clause when no finalize clause appears, or each acc_copyout
+1526 or acc_delete API routine call for that section of memory. The dynamic reference counter will
+1527 be set to zero with an exit data copyout or delete clause when a finalize clause ap1528 pears, or each acc_copyout_finalize or acc_delete_finalize API routine call for
+1529 the section of memory. The reference counters are modified synchronously with the local thread,
+1530 even if the data directives include an async clause. When both structured and dynamic reference
+1531 counters reach zero, the data lifetime in device memory for that data ends.
+1532 2.6.8 Attachment Counter
+1533 Since multiple pointers can target the same address, each pointer in device memory is associated
+1534 with an attachment counter per device. The attachment counter for a pointer is initialized to zero
+44
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1535 when the pointer is allocated in device memory. The attachment counter for a pointer is set to one
+1536 whenever the pointer is attached to new target address, and incremented whenever an attach action
+1537 for that pointer is performed for the same target address. The attachment counter is decremented
+1538 whenever a detach action occurs for the pointer, and the pointer is detached when the attachment
+1539 counter reaches zero. This is described in more detail in Section 2.7.2 Data Clause Actions.
+1540 A pointer in device memory can be assigned a device address in two ways. The pointer can be
+1541 attached to a device address due to data clauses or API routines, as described in Section 2.7.2
+1542 Data Clause Actions, or the pointer can be assigned in a compute region executed on that device.
+1543 Unspecified behavior may result if both ways are used for the same pointer.
+1544 Pointer members of structs, classes, or derived types in device or host memory can be overwritten
+1545 due to update directives or API routines. It is the user’s responsibility to ensure that the pointers
+1546 have the appropriate values before or after the data movement in either direction. The behavior of
+1547 the program is undefined if any of the pointer members are attached when an update of a composite
+1548 variable is performed.
+1549 2.7 Data Clauses
+1550 Data clauses may appear on the parallel construct, serial construct, kernels construct,
+1551 data construct, the enter data and exit data directives, and declare directives. In the
+1552 descriptions, the region is a compute region with a clause appearing on a parallel, serial, or
+1553 kernels construct, a data region with a clause on a data construct, or an implicit data region
+1554 with a clause on a declare directive. If the declare directive appears in a global context,
+1555 the corresponding implicit data region has a duration of the program. The list argument to each
+1556 data clause is a comma-separated collection of vars. On a declare directive, the list argument
+1557 of a copyin, create, device_resident, or link clause may include a Fortran common
+1558 block name enclosed within slashes. On any directive, for any clause except deviceptr and
+1559 present, the list argument may include a Fortran common block name enclosed within slashes
+1560 if that common block name also appears in a declare directive link clause. In all cases, the
+1561 compiler will allocate and manage a copy of the var in the memory of the current device, creating a
+1562 visible device copy of that var, for data not in shared memory.
+1563 OpenACC supports accelerators with discrete memories from the local thread. However, if the
+1564 accelerator can access the local memory directly, the implementation may avoid the memory allo1565 cation and data movement and simply share the data in local memory. Therefore, a program that
+1566 uses and assigns data on the host and uses and assigns the same data on the accelerator within a
+1567 data region without update directives to manage the coherence of the two copies may get different
+1568 answers on different accelerators or implementations.
+1569 Restrictions
+1570 • Data clauses may not follow a device_type clause.
+1571 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in data
+1572 clauses.
+1573 2.7.1 Data Specification in Data Clauses
+1574 In C and C++, a subarray is an array name followed by an extended array range specification in
+1575 brackets, with start and length, such as
+1576 AA[2:n]
+45
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1577 If the lower bound is missing, zero is used. If the length is missing and the array has known size, the
+1578 size of the array is used; otherwise the length is required. The subarray AA[2:n] means elements
+1579 AA[2], AA[3], . . . , AA[2+n-1].
+1580 In C and C++, a two dimensional array may be declared in at least four ways:
+1581 • Statically-sized array: float AA[100][200];
+1582 • Pointer to statically sized rows: typedef float row[200]; row* BB;
+1583 • Statically-sized array of pointers: float* CC[200];
+1584 • Pointer to pointers: float** DD;
+1585 Each dimension may be statically sized, or a pointer to dynamically allocated memory. Each of
+1586 these may be included in a data clause using subarray notation to specify a rectangular array:
+1587 • AA[2:n][0:200]
+1588 • BB[2:n][0:m]
+1589 • CC[2:n][0:m]
+1590 • DD[2:n][0:m]
+1591 Multidimensional rectangular subarrays in C and C++ may be specified for any array with any com1592 bination of statically-sized or dynamically-allocated dimensions. For statically sized dimensions, all
+1593 dimensions except the first must specify the whole extent to preserve the contiguous data restriction,
+1594 discussed below. For dynamically allocated dimensions, the implementation will allocate pointers
+1595 in device memory corresponding to the pointers in local memory and will fill in those pointers as
+1596 appropriate.
+1597 In Fortran, a subarray is an array name followed by a comma-separated list of range specifications
+1598 in parentheses, with lower and upper bound subscripts, such as
+1599 arr(1:high,low:100)
+1600 If either the lower or upper bounds are missing, the declared or allocated bounds of the array, if
+1601 known, are used. All dimensions except the last must specify the whole extent, to preserve the
+1602 contiguous data restriction, discussed below.
+1603 Restrictions
+1604 • In Fortran, the upper bound for the last dimension of an assumed-size dummy array must be
+1605 specified.
+1606 • In C and C++, the length for dynamically allocated dimensions of an array must be explicitly
+1607 specified.
+1608 • In C and C++, modifying pointers in pointer arrays during the data lifetime, either on the host
+1609 or on the device, may result in undefined behavior.
+1610 • If a subarray appears in a data clause, the implementation may choose to allocate memory for
+1611 only that subarray on the accelerator.
+1612 • In Fortran, array pointers may appear, but pointer association is not preserved in device mem1613 ory.
+46
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1614 • Any array or subarray in a data clause, including Fortran array pointers, must be a contiguous
+1615 section of memory, except for dynamic multidimensional C arrays.
+1616 • In C and C++, if a variable or array of composite type appears, all the data members of the
+1617 struct or class are allocated and copied, as appropriate. If a composite member is a pointer
+1618 type, the data addressed by that pointer are not implicitly copied.
+1619 • In Fortran, if a variable or array of composite type appears, all the members of that derived
+1620 type are allocated and copied, as appropriate. If any member has the allocatable or
+1621 pointer attribute, the data accessed through that member are not copied.
+1622 • If an expression is used in a subscript or subarray expression in a clause on a data construct,
+1623 the same value is used when copying data at the end of the data region, even if the values of
+1624 variables in the expression change during the data region.
+1625 2.7.2 Data Clause Actions
+1626 Most of the data clauses perform one or more the following actions. The actions test or modify one
+1627 or both of the structured and dynamic reference counters, depending on the directive on which the
+1628 data clause appears.
+1629 Present Increment Action
+1630 A present increment action is one of the actions that may be performed for a present (Sec1631 tion 2.7.5), copy (Section 2.7.6), copyin (Section 2.7.7), copyout (Section 2.7.8), create
+1632 (Section 2.7.9), or no_create (Section 2.7.10) clause, or for a call to an acc_copyin or
+1633 acc_create (Section 3.2.18) API routine. See those sections for details.
+1634 A present increment action for a var occurs only when var is already present in device memory.
+1635 A present increment action for a var increments the structured or dynamic reference counter for var.
+1636 Present Decrement Action
+1637 A present decrement action is one of the actions that may be performed for a present (Section
+1638 2.7.5), copy (Section 2.7.6), copyin (Section 2.7.7), copyout (Section 2.7.8), create (Sec1639 tion 2.7.9), no_create (Section 2.7.10), or delete (Section 2.7.11) clause, or for a call to an
+1640 acc_copyout or acc_delete (Section 3.2.19) API routine. See those sections for details.
+1641 A present decrement action for a var occurs only when var is already present in device memory.
+1642 A present decrement action for a var decrements the structured or dynamic reference counter for
+1643 var, if its value is greater than zero. If the device memory associated with var was mapped to
+1644 the device using acc_map_data, the dynamic reference count may not be decremented to zero,
+1645 except by a call to acc_unmap_data. If the reference counter is already zero, its value is left
+1646 unchanged.
+1647 Create Action
+1648 A create action is one of the actions that may be performed for a copyout (Section 2.7.8) or
+1649 create (Section 2.7.9) clause, or for a call to an acc_create API routine (Section 3.2.18). See
+1650 those sections for details.
+47
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1651 A create action for a var occurs only when var is not already present in device memory.
+1652 A create action for a var:
+1653 • allocates device memory for var; and
+1654 • sets the structured or dynamic reference counter to one.
+1655 Copyin Action
+1656 A copyin action is one of the actions that may be performed for a copy (Section 2.7.6) or copyin
+1657 (Section 2.7.7) clause, or for a call to an acc_copyin API routine (Section 3.2.18). See those
+1658 sections for details.
+1659 A copyin action for a var occurs only when var is not already present in device memory.
+1660 A copyin action for a var:
+1661 • allocates device memory for var;
+1662 • initiates a copy of the data for var from the local thread memory to the corresponding device
+1663 memory; and
+1664 • sets the structured or dynamic reference counter to one.
+1665 The data copy may complete asynchronously, depending on other clauses on the directive.
+1666 Copyout Action
+1667 A copyout action is one of the actions that may be performed for a copy (Section 2.7.6) or
+1668 copyout (Section 2.7.8) clause, or for a call to an acc_copyout API routine (Section 3.2.19).
+1669 See those sections for details.
+1670 A copyout action for a var occurs only when var is present in device memory.
+1671 A copyout action for a var:
+1672 • performs an immediate detach action for any pointer in var;
+1673 • initiates a copy of the data for var from device memory to the corresponding local thread
+1674 memory; and
+1675 • deallocates device memory for var.
+1676 The data copy may complete asynchronously, depending on other clauses on the directive, in which
+1677 case the memory is deallocated when the data copy is complete.
+1678 Delete Action
+1679 A delete action is one of the actions that may be performed for a present (Section 2.7.5),
+1680 copyin (Section 2.7.7), create (Section 2.7.9), no_create (Section 2.7.10), or delete (Sec1681 tion 2.7.11) clause, or for a call to an acc_delete API routine (Section 3.2.19). See those sections
+1682 for details.
+1683 A delete action for a var occurs only when var is present in device memory.
+1684 A delete action for var:
+48
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1685 • performs an immediate detach action for any pointer in var; and
+1686 • deallocates device memory for var.
+1687 Attach Action
+1688 An attach action is one of the actions that may be performed for a present (Section 2.7.5),
+1689 copy (Section 2.7.6), copyin (Section 2.7.7), copyout (Section 2.7.8), create (Section 2.7.9),
+1690 no_create (Section 2.7.10), or attach (Section 2.7.11) clause, or for a call to an acc_attach
+1691 API routine (Section 3.2.29). See those sections for details.
+1692 An attach action for a var occurs only when var is a pointer reference.
+1693 If the pointer var is in shared memory or is not present in the current device memory, or if the
+1694 address to which var points is not present in the current device memory, no action is taken. If the
+1695 attachment counter for var is nonzero and the pointer in device memory already points to the device
+1696 copy of the data in var, the attachment counter for the pointer var is incremented. Otherwise, the
+1697 pointer in device memory is attached to the device copy of the data by initiating an update for the
+1698 pointer in device memory to point to the device copy of the data and setting the attachment counter
+1699 for the pointer var to one. If the pointer is a null pointer, the pointer in device memory is updated to
+1700 have the same value. The update may complete asynchronously, depending on other clauses on the
+1701 directive. The implementation schedules pointer updates after any data copies due to copyin actions
+1702 that are performed for the same directive.
+1703 Detach Action
+1704 A detach action is one of the actions that may be performed for a present (Section 2.7.5),
+1705 copy (Section 2.7.6), copyin (Section 2.7.7), copyout (Section 2.7.8), create (Section 2.7.9),
+1706 no_create (Section 2.7.10), delete (Section 2.7.11), or detach (Section 2.7.11) clause, or
+1707 for a call to an acc_detach API routine (Section 3.2.29). See those sections for details.
+1708 A detach action for a var occurs only when var is a pointer reference.
+1709 If the pointer var is in shared memory or is not present in the current device memory, or if the
+1710 attachment counter for var for the pointer is zero, no action is taken. Otherwise, the attachment
+1711 counter for the pointer var is decremented. If the attachment counter is decreased to zero, the
+1712 pointer is detached by initiating an update for the pointer var in device memory to have the same
+1713 value as the corresponding pointer in local memory. The update may complete asynchronously,
+1714 depending on other clauses on the directive. The implementation schedules pointer updates before
+1715 any data copies due to copyout actions that are performed for the same directive.
+1716 Immediate Detach Action
+1717 An immediate detach action is one of the actions that may be performed for a detach (Section
+1718 2.7.11) clause, or for a call to an acc_detach_finalize API routine (Section 3.2.29). See
+1719 those sections for details.
+1720 An immediate detach action for a var occurs only when var is a pointer reference and is present in
+1721 device memory.
+1722 If the attachment counter for the pointer is zero, the immediate detach action has no effect. Other1723 wise, the attachment counter for the pointer set to zero and the pointer is detached by initiating an
+1724 update for the pointer in device memory to have the same value as the corresponding pointer in local
+49
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1725 memory. The update may complete asynchronously, depending on other clauses on the directive.
+1726 The implementation schedules pointer updates before any data copies due to copyout actions that
+1727 are performed for the same directive.
+1728 2.7.3 Data Clause Errors
+1729 An error is issued for a var that appears in a copy, copyin, copyout, create, and delete
+1730 clause as follows:
+1731 • An acc_error_partly_present error is issued if part of var is present in the current
+1732 device memory but all of var is not.
+1733 • An acc_error_invalid_data_section error is issued if var is a Fortran subarray
+1734 with a stride that is not one.
+1735 • An acc_error_out_of_memory error is issued if the accelerator device does not have
+1736 enough memory for var.
+1737 An error is issued for a var that appears in a present clause as follows:
+1738 • An acc_error_not_present error is issued if var is not present in the current device
+1739 memory at entry to a data or compute construct.
+1740 • An acc_error_partly_present error is issued if part of var is present in the current
+1741 device memory but all of var is not.
+1742 See Section 5.2.2.
+1743 2.7.4 deviceptr clause
+1744 The deviceptr clause may appear on structured data and compute constructs and declare
+1745 directives.
+1746 The deviceptr clause is used to declare that the pointers in var-list are device pointers, so the
+1747 data need not be allocated or moved between the host and device for this pointer.
+1748 In C and C++, the vars in var-list must be pointer variables.
+1749 In Fortran, the vars in var-list must be dummy arguments (arrays or scalars), and may not have the
+1750 Fortran pointer, allocatable, or value attributes.
+1751 For data in shared memory, host pointers are the same as device pointers, so this clause has no
+1752 effect.
+1753 2.7.5 present clause
+1754 The present clause may appear on structured data and compute constructs and declare di1755 rectives. The present clause specifies that vars in var-list are in shared memory or are already
+1756 present in the current device memory due to data regions or data lifetimes that contain the construct
+1757 on which the present clause appears.
+1758 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1759 the present clause behaves as follows:
+1760 • At entry to the region:
+50
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1761 – An attach action is performed if var is a pointer reference, and a present increment
+1762 action with the structured reference counter is performed if var is not a null pointer.
+1763 • At exit from the region:
+1764 – If the structured reference counter for var is zero, no action is taken.
+1765 – Otherwise, a detach action is performed if var is a pointer reference, and a present decrement
+1766 action with the structured reference counter is performed if var is not a null pointer. If
+1767 both structured and dynamic reference counters are zero, a delete action is performed.
+1768 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1769 2.7.6 copy clause
+1770 The copy clause may appear on structured data and compute constructs and on declare direc1771 tives.
+1772 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1773 the copy clause behaves as follows:
+1774 • At entry to the region:
+1775 – If var is present and is not a null pointer, a present increment action with the structured
+1776 reference counter is performed.
+1777 – If var is not present, a copyin action with the structured reference counter is performed.
+1778 – If var is a pointer reference, an attach action is performed.
+1779 • At exit from the region:
+1780 – If the structured reference counter for var is zero, no action is taken.
+1781 – Otherwise, a detach action is performed if var is a pointer reference, and a present decrement
+1782 action with the structured reference counter is performed if var is not a null pointer. If
+1783 both structured and dynamic reference counters are zero, a copyout action is performed.
+1784 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1785 For compatibility with OpenACC 2.0, present_or_copy and pcopy are alternate names for
+1786 copy.
+1787 2.7.7 copyin clause
+1788 The copyin clause may appear on structured data and compute constructs, on declare direc1789 tives, and on enter data directives.
+1790 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1791 the copyin clause behaves as follows:
+1792 • At entry to a region, the structured reference counter is used. On an enter data directive,
+1793 the dynamic reference counter is used.
+1794 – If var is present and is not a null pointer, a present increment action with the appropriate
+1795 reference counter is performed.
+51
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1796 – If var is not present, a copyin action with the appropriate reference counter is performed.
+1797 – If var is a pointer reference, an attach action is performed.
+1798 • At exit from the region:
+1799 – If the structured reference counter for var is zero, no action is taken.
+1800 – Otherwise, a detach action is performed if var is a pointer reference, and a present decrement
+1801 action with the structured reference counter is performed if var is not a null pointer. If
+1802 both structured and dynamic reference counters are zero, a delete action is performed.
+1803 If the optional readonly modifier appears, then the implementation may assume that the data
+1804 referenced by var-list is never written to within the applicable region.
+1805 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1806 For compatibility with OpenACC 2.0, present_or_copyin and pcopyin are alternate names
+1807 for copyin.
+1808 An enter data directive with a copyin clause is functionally equivalent to a call to the acc_copyin
+1809 API routine, as described in Section 3.2.18.
+1810 2.7.8 copyout clause
+1811 The copyout clause may appear on structured data and compute constructs, on declare di1812 rectives, and on exit data directives. The clause may optionally have a zero modifier if the
+1813 copyout clause appears on a structured data or compute construct.
+1814 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1815 the copyout clause behaves as follows:
+1816 • At entry to a region:
+1817 – If var is present and is not a null pointer, a present increment action with the structured
+1818 reference counter is performed.
+1819 – If var is not present, a create action with the structured reference counter is performed.
+1820 If a zero modifier appears, the memory is zeroed after the create action.
+1821 – If var is a pointer reference, an attach action is performed.
+1822 • At exit from a region, the structured reference counter is used. On an exit data directive,
+1823 the dynamic reference counter is used.
+1824 – If the appropriate reference counter for var is zero, no action is taken.
+1825 – Otherwise, a detach action is performed if var is a pointer reference, and the reference
+1826 counter is updated if var is not a null pointer:
+1827 ∗ On an exit data directive with a finalize clause, the dynamic reference
+1828 counter is set to zero.
+1829 ∗ Otherwise, a present decrement action with the appropriate reference counter is
+1830 performed.
+52
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1831 If both structured and dynamic reference counters are zero, a copyout action is per1832 formed.
+1833 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1834 For compatibility with OpenACC 2.0, present_or_copyout and pcopyout are alternate
+1835 names for copyout.
+1836 An exit data directive with a copyout clause and with or without a finalize clause is func1837 tionally equivalent to a call to the acc_copyout_finalize or acc_copyout API routine,
+1838 respectively, as described in Section 3.2.19.
+1839 2.7.9 create clause
+1840 The create clause may appear on structured data and compute constructs, on declare direc1841 tives, and on enter data directives. The clause may optionally have a zero modifier.
+1842 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1843 the create clause behaves as follows:
+1844 • At entry to a region, the structured reference counter is used. On an enter data directive,
+1845 the dynamic reference counter is used.
+1846 – If var is present and is not a null pointer, a present increment action with the appropriate
+1847 reference counter is performed.
+1848 – If var is not present and is not a null pointer, a create action with the appropriate refer1849 ence counter is performed. If a zero modifier appears, the memory is zeroed after the
+1850 create action.
+1851 – If var is a pointer reference, an attach action is performed.
+1852 • At exit from the region:
+1853 – If the structured reference counter for var is zero, no action is taken.
+1854 – Otherwise, a detach action is performed if var is a pointer reference, and a present decrement
+1855 action with the structured reference counter is performed if var is not a null pointer If
+1856 both structured and dynamic reference counters are zero, a delete action is performed.
+1857 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1858 For compatibility with OpenACC 2.0, present_or_create and pcreate are alternate names
+1859 for create.
+1860 An enter data directive with a create clause is functionally equivalent to a call to the acc_create
+1861 API routine, as described in Section 3.2.18, except the directive may perform an attach action for a
+1862 pointer reference.
+1863 2.7.10 no create clause
+1864 The no_create clause may appear on structured data and compute constructs.
+1865 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1866 the no_create clause behaves as follows:
+53
+The OpenACC
+R API Version 3.3 2.7. Data Clauses
+1867 • At entry to the region:
+1868 – If var is present and is not a null pointer, a present increment action with the structured
+1869 reference counter is performed. If var is present and is a pointer reference, an attach
+1870 action is performed.
+1871 – If var is not present, no action is performed, and any device code in this construct will
+1872 use the local memory address for var.
+1873 • At exit from the region:
+1874 – If the structured reference counter for var is zero, no action is taken.
+1875 – Otherwise, a detach action is performed if var is a pointer reference, and a present decrement
+1876 action with the structured reference counter is performed if var is not a null pointer. If
+1877 both structured and dynamic reference counters are zero, a delete action is performed.
+1878 2.7.11 delete clause
+1879 The delete clause may appear on exit data directives.
+1880 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1881 the delete clause behaves as follows:
+1882 • If the dynamic reference counter for var is zero, no action is taken.
+1883 • Otherwise, a detach action is performed if var is a pointer reference, and the dynamic refer1884 ence counter is updated if var is not a null pointer:
+1885 – On an exit data directive with a finalize clause, the dynamic reference counter
+1886 is set to zero.
+1887 – Otherwise, a present decrement action with the dynamic reference counter is performed.
+1888 If var is a pointer reference, a detach action is performed. If both structured and dynamic
+1889 reference counters are zero, a delete action is performed.
+1890 An exit data directive with a delete clause and with or without a finalize clause is func1891 tionally equivalent to a call to the acc_delete_finalize or acc_delete API routine, re1892 spectively, as described in Section 3.2.19.
+1893 The errors in Section 2.7.3 Data Clause Errors may be issued for this clause.
+1894 2.7.12 attach clause
+1895 The attach clause may appear on structured data and compute constructs and on enter data
+1896 directives. Each var argument to an attach clause must be a C or C++ pointer or a Fortran variable
+1897 or array with the pointer or allocatable attribute.
+1898 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1899 the attach clause behaves as follows:
+1900 • At entry to a region or at an enter data directive, an attach action is performed.
+1901 • At exit from the region, a detach action is performed.
+54
+The OpenACC
+R API Version 3.3 2.8. Host Data Construct
+1902 2.7.13 detach clause
+1903 The detach clause may appear on exit data directives. Each var argument to a detach clause
+1904 must be a C or C++ pointer or a Fortran variable or array with the pointer or allocatable
+1905 attribute.
+1906 For each var in var-list, if var is in shared memory, no action is taken; if var is not in shared memory,
+1907 the detach clause behaves as follows:
+1908 • If there is a finalize clause on the exit data directive, an immediate detach action is
+1909 performed.
+1910 • Otherwise, a detach action is performed.
+1911 2.8 Host Data Construct
+1912 Summary
+1913 The host_data construct makes the address of data in device memory available on the host.
+1914 Syntax
+1915 In C and C++, the syntax of the OpenACC host_data construct is
+1916 #pragma acc host_data clause-list new-line
+1917 structured block
+1918 and in Fortran, the syntax is
+1919 !$acc host_data clause-list
+1920 structured block
+1921 !$acc end host_data
+1922 or
+1923 !$acc host_data clause-list
+1924 block construct
+1925 [!$acc end host_data]
+1926 where clause is one of the following:
+1927 use_device( var-list )
+1928 if( condition )
+1929 if_present
+1930 Description
+1931 This construct is used to make the address of data in device memory available in host code.
+1932 Restrictions
+1933 • A var in a use_device clause must be the name of a variable or array.
+1934 • At least one use_device clause must appear.
+1935 • At most one if clause may appear. In Fortran, the condition must evaluate to a scalar logical
+1936 value; in C or C++, the condition must evaluate to a scalar integer value.
+1937 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in
+1938 use_device clauses.
+55
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+1939 2.8.1 use device clause
+1940 The use_device clause tells the compiler to use the current device address of any var in var-list
+1941 in code within the construct. In particular, this may be used to pass the device address of var to
+1942 optimized procedures written in a lower-level API. If var is a null pointer, the same value is used
+1943 for the device address. Otherwise, when there is no if_present clause, and either there is no
+1944 if clause or the condition in the if clause evaluates to true, the var in var-list must be present in
+1945 the accelerator memory due to data regions or data lifetimes that contain this construct. For data in
+1946 shared memory, the device address is the same as the host address.
+1947 2.8.2 if clause
+1948 The if clause is optional. When an if clause appears and the condition evaluates to false, the
+1949 compiler will not replace the addresses of any var in code within the construct. When there is no if
+1950 clause, or when an if clause appears and the condition evaluates to true, the compiler will replace
+1951 the addresses as described in the previous subsection.
+1952 2.8.3 if present clause
+1953 When an if_present clause appears on the directive, the compiler will only replace the address
+1954 of any var which appears in var-list that is present in the current device memory.
+1955 2.9 Loop Construct
+1956 Summary
+1957 The OpenACC loop construct applies to a loop which must immediately follow this directive. The
+1958 loop construct can describe what type of parallelism to use to execute the loop and declare private
+1959 vars and reduction operations.
+1960 Syntax
+1961 In C and C++, the syntax of the loop construct is
+1962 #pragma acc loop [clause-list] new-line
+1963 for loop
+1964 In Fortran, the syntax of the loop construct is
+1965 !$acc loop [clause-list]
+1966 do loop
+1967 where clause is one of the following:
+1968 collapse( [force:] n )
+1969 gang [( gang-arg-list )]
+1970 worker [( [num:]int-expr )]
+1971 vector [( [length:]int-expr )]
+1972 seq
+1973 independent
+1974 auto
+1975 tile( size-expr-list )
+1976 device_type( device-type-list )
+56
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+1977 private( var-list )
+1978 reduction( operator:var-list )
+1979 where gang-arg is one of:
+1980 [num:]int-expr
+1981 dim:int-expr
+1982 static:size-expr
+1983 and gang-arg-list may have at most one num, one dim, and one static argument, and where
+1984 size-expr is one of:
+1985 *
+1986 int-expr
+1987
+1988 Some clauses are only valid in the context of a kernels construct; see the descriptions below.
+1989 An orphaned loop construct is a loop construct that is not lexically enclosed within a compute
+1990 construct. The parent compute construct of a loop construct is the nearest compute construct that
+1991 lexically contains the loop construct.
+1992 A loop construct is data-independent if it has an independent clause that is determined explic1993 itly, implicitly, or from an auto clause. A loop construct is sequential if it has a seq clause that
+1994 is determined explicitly or from an auto clause.
+1995 When do-loop is a do concurrent, the OpenACC loop construct applies to the loop for each
+1996 index in the concurrent-header. The loop construct can describe what type of parallelism to use
+1997 to execute all the loops, and declares all indices appearing in the concurrent-header to be implicitly
+1998 private. If the loop construct that is associated with do concurrent is combined with a compute
+1999 construct then concurrent-locality is processed as follows: variables appearing in a local are treated
+2000 as appearing in a private clause; variables appearing in a local init are treated as appearing in a
+2001 firstprivate clause; variables appearing in a shared are treated as appearing in a copy clause;
+2002 and a default(none) locality spec implies a default(none) clause on the compute construct. If
+2003 the loop construct is not combined with a compute construct, the behavior is implementation2004 defined.
+2005 Restrictions
+2006 • Only the collapse, gang, worker, vector, seq, independent, auto, and tile
+2007 clauses may follow a device_type clause.
+2008 • The int-expr argument to the worker and vector clauses must be invariant in the kernels
+2009 region.
+2010 • A loop associated with a loop construct that does not have a seq clause must be written to
+2011 meet all of the following conditions:
+2012 – The loop variable must be of integer, C/C++ pointer, or C++ random-access iterator
+2013 type.
+2014 – The loop variable must monotonically increase or decrease in the direction of its termi2015 nation condition.
+2016 – The loop trip count must be computable in constant time when entering the loop con2017 struct.
+57
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2018 For a C++ range-based for loop, the loop variable identified by the above conditions is the
+2019 internal iterator, such as a pointer, that the compiler generates to iterate the range. It is not the
+2020 variable declared by the for loop.
+2021 • Only one of the seq, independent, and auto clauses may appear.
+2022 • A gang, worker, or vector clause may not appear if a seq clause appears.
+2023 • A tile and collapse clause may not appear on loop that is associated with do concurrent.
+2024 2.9.1 collapse clause
+2025 The collapse clause is used to specify how many nested loops are associated with the loop
+2026 construct. The argument to the collapse clause must be a constant positive integer expression.
+2027 If no collapse clause appears, only the immediately following loop is associated with the loop
+2028 construct.
+2029 If more than one loop is associated with the loop construct, the iterations of all the associated loops
+2030 are all scheduled according to the rest of the clauses. The trip count for all loops associated with
+2031 the collapse clause must be computable and invariant in all the loops. The particular integer
+2032 type used to compute the trip count for the collapsed loops is implementation defined. However, the
+2033 integer type used for the trip count has at least the precision of each loop variable of the associated
+2034 loops.
+2035 It is implementation-defined whether a gang, worker or vector clause on the construct is ap2036 plied to each loop, or to the linearized iteration space.
+2037 The associated loops are the n nested loops that immediately follow the loop construct. If the
+2038 force modifier does not appear, then the associated loops must be tightly nested. If the force
+2039 modifier appears, then any intervening code may be executed multiple times as needed to perform
+2040 the collapse.
+2041 Restrictions
+2042 • Each associated loop, except the innermost, must contain exactly one loop or loop nest.
+2043 • Intervening code must not contain other OpenACC directives or calls to API routines.
+2044 H H
+2045 Examples
+2046
+2047 • In the code below, a compiler may choose to move the call to tan inside the inner loop in
+2048 order to collapse the two loops, resulting in redundant execution of the intervening code.
+2049 #pragma acc parallel loop collapse(force:2)
+2050 {
+2051 for ( int i = 0; i < 360; i++ )
+2052 {
+2053 // This operation may be executed additional times in order
+2054 // to perform the forced collapse.
+2055 tanI = tan(a[i]);
+2056 for ( int j = 0; j < N; j++ )
+2057 {
+58
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2058 // Do Something.
+2059 }
+2060 }
+2061 }
+2062 N N
+2063 2.9.2 gang clause
+2064 When the parent compute construct is a parallel construct, or on an orphaned loop construct,
+2065 the gang clause behaves as follows. It specifies that the iterations of the associated loop or loops
+2066 are to be executed in parallel by distributing the iterations among the gangs along the associated
+2067 dimension created by the compute construct. The associated dimension is the value of the dim
+2068 argument, if it appears, or is dimension one. The dim argument must be a constant positive integer
+2069 with value 1, 2, or 3. If the associated dimension is d, a loop construct with the gang clause
+2070 transitions a compute region from gang-redundant mode to gang-partitioned mode on dimension d
+2071 (GRd to GPd). The number of gangs in dimension d is controlled by the parallel construct; the
+2072 num argument is not allowed. The loop iterations must be data independent, except for vars which
+2073 appear in a reduction clause or which are modified in an atomic region.
+2074 When the parent compute construct is a kernels construct, the gang clause behaves as follows.
+2075 It specifies that the iterations of the associated loop or loops are to be executed in parallel across the
+2076 gangs. The dim argument is not allowed. An argument with no keyword or with the num keyword
+2077 is allowed only when the num_gangs does not appear on the kernels construct. If an argument
+2078 with no keyword or an argument after the num keyword appears, it specifies how many gangs to use
+2079 to execute the iterations of this loop. The region of a loop with the gang clause may not contain
+2080 another loop with a gang clause unless within a nested compute region.
+2081 The scheduling of loop iterations to gangs is not specified unless the static modifier appears as
+2082 an argument. If the static modifier appears with an integer expression, that expression is used
+2083 as a chunk size. If the static modifier appears with an asterisk, the implementation will select a
+2084 chunk size. The iterations are divided into chunks of the selected chunk size, and the chunks are
+2085 assigned to gangs starting with gang zero and continuing in round-robin fashion. Two gang loops
+2086 in the same parallel region with the same number of iterations, and with static clauses with the
+2087 same argument, will assign the iterations to gangs in the same manner. Two gang loops in the
+2088 same kernels region with the same number of iterations, the same number of gangs to use, and with
+2089 static clauses with the same argument, will assign the iterations to gangs in the same manner.
+2090 A gang(dim:1) clause is implied on a data-independent loop construct without an explicit
+2091 gang clause if the following conditions hold while ignoring gang, worker, and vector clauses
+2092 on any sequential loop constructs:
+2093 • This loop construct’s parent compute construct, if any, is not a kernels construct.
+2094 • An explicit gang(dim:1) clause would be permitted on this loop construct.
+2095 • For every lexically enclosing data-independent loop construct, either an explicit gang(dim:1)
+2096 clause would not be permitted on the enclosing loop construct, or the enclosing loop con2097 struct lexically encloses a compute construct that lexically encloses this loop construct.
+2098 Note: As a performance optimization, the implementation might select different levels of paral2099 lelism for a loop construct than specified by explicitly or implicitly determined clauses as long
+59
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2100 as it can prove program semantics are preserved. In particular, the implementation must consider
+2101 semantic differences between gang-redundant and gang-partitioned mode. For example, in a series
+2102 of tightly nested, data-independent loop constructs, implementations often move gang-partitioning
+2103 from one loop construct to another without affecting semantics.
+2104 Note: If the auto or device_type clause appears on a loop construct, it is the programmer’s
+2105 responsibility to ensure that program semantics are the same regardless of whether the auto clause
+2106 is treated as independent or seq and regardless of the device type for which the program is
+2107 compiled. In particular, the programmer must consider the effect on both explicitly and implicitly
+2108 determined gang clauses and thus on gang-redundant and gang-partitioned mode. Examples in
+2109 Section 2.9.11 demonstrate this issue for the auto clause.
+2110 Restrictions
+2111 • At most one gang clause may appear on a loop directive.
+2112 • The region of a loop with a gang(dim:d) clause may not contain a loop construct with a
+2113 gang(dim:e) clause where e >= d unless it appears within a nested compute region.
+2114 2.9.3 worker clause
+2115 When the parent compute construct is a parallel construct, or on an orphaned loop construct,
+2116 the worker clause specifies that the iterations of the associated loop or loops are to be executed
+2117 in parallel by distributing the iterations among the multiple workers within a single gang. A loop
+2118 construct with a worker clause causes a gang to transition from worker-single mode to worker2119 partitioned mode. In contrast to the gang clause, the worker clause first activates additional
+2120 worker-level parallelism and then distributes the loop iterations across those workers. No argu2121 ment is allowed. The loop iterations must be data independent, except for vars which appear in
+2122 a reduction clause or which are modified in an atomic region. The region of a loop with the
+2123 worker clause may not contain a loop with the gang or worker clause unless within a nested
+2124 compute region.
+2125 When the parent compute construct is a kernels construct, the worker clause specifies that the
+2126 iterations of the associated loop or loops are to be executed in parallel across the workers within
+2127 a single gang. An argument is allowed only when the num_workers does not appear on the
+2128 kernels construct. The optional argument specifies how many workers per gang to use to execute
+2129 the iterations of this loop. The region of a loop with the worker clause may not contain a loop
+2130 with a gang or worker clause unless within a nested compute region.
+2131 All workers will complete execution of their assigned iterations before any worker proceeds beyond
+2132 the end of the loop.
+2133 2.9.4 vector clause
+2134 When the parent compute construct is a parallel construct, or on an orphaned loop construct,
+2135 the vector clause specifies that the iterations of the associated loop or loops are to be executed
+2136 in vector or SIMD mode. A loop construct with a vector clause causes a worker to transition
+2137 from vector-single mode to vector-partitioned mode. Similar to the worker clause, the vector
+2138 clause first activates additional vector-level parallelism and then distributes the loop iterations across
+2139 those vector lanes. The operations will execute using vectors of the length specified or chosen for
+2140 the parallel region. The loop iterations must be data independent, except for vars which appear in
+2141 a reduction clause or which are modified in an atomic region. The region of a loop with the
+60
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2142 vector clause may not contain a loop with the gang, worker, or vector clause unless within
+2143 a nested compute region.
+2144 When the parent compute construct is a kernels construct, the vector clause specifies that the
+2145 iterations of the associated loop or loops are to be executed with vector or SIMD processing. An
+2146 argument is allowed only when the vector_length does not appear on the kernels construct.
+2147 If an argument appears, the iterations will be processed in vector strips of that length; if no argument
+2148 appears, the implementation will choose an appropriate vector length. The region of a loop with the
+2149 vector clause may not contain a loop with a gang, worker, or vector clause unless within a
+2150 nested compute region.
+2151 All vector lanes will complete execution of their assigned iterations before any vector lane proceeds
+2152 beyond the end of the loop.
+2153 2.9.5 seq clause
+2154 The seq clause specifies that the associated loop or loops are to be executed sequentially by the
+2155 accelerator. This clause will override any automatic parallelization or vectorization.
+2156 2.9.6 independent clause
+2157 The independent clause tells the implementation that the loop iterations must be data indepen2158 dent, except for vars which appear in a reduction clause or which are modified in an atomic
+2159 region. This allows the implementation to generate code to execute the iterations in parallel with no
+2160 synchronization.
+2161 A loop construct with no auto or seq clause is treated as if it has the independent clause
+2162 when it is an orphaned loop construct or its parent compute construct is a parallel construct.
+2163 Note
+2164 • It is likely a programming error to use the independent clause on a loop if any iteration
+2165 writes to a variable or array element that any other iteration also writes or reads, except for
+2166 vars which appear in a reduction clause or which are modified in an atomic region.
+2167 • The implementation may be restricted in the levels of parallelism it can apply by the presence
+2168 of loop constructs with gang, worker, or vector clauses for outer or inner loops.
+2169 2.9.7 auto clause
+2170 The auto clause specifies that the implementation must analyze the loop and determine whether the
+2171 loop iterations are data-independent. If it determines that the loop iterations are data-independent,
+2172 the implementation must treat the auto clause as if it is an independent clause. If not, or if it
+2173 is unable to make a determination, it must treat the auto clause as if it is a seq clause, and it must
+2174 ignore any gang, worker, or vector clauses on the loop construct.
+2175 When the parent compute construct is a kernels construct, a loop construct with no independent
+2176 or seq clause is treated as if it has the auto clause.
+2177 2.9.8 tile clause
+2178 The tile clause specifies that the implementation should split each loop in the loop nest into two
+2179 loops, with an outer set of tile loops and an inner set of element loops. The argument to the tile
+61
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2180 clause is a list of one or more tile sizes, where each tile size is a constant positive integer expression
+2181 or an asterisk. If there are n tile sizes in the list, the loop construct must be immediately followed
+2182 by n tightly-nested loops. The first argument in the size-expr-list corresponds to the innermost loop
+2183 of the n associated loops, and the last element corresponds to the outermost associated loop. If the
+2184 tile size is an asterisk, the implementation will choose an appropriate value. Each loop in the nest
+2185 will be split or strip-mined into two loops, an outer tile loop and an inner element loop. The trip
+2186 count of the element loop will be limited to the corresponding tile size from the size-expr-list. The
+2187 tile loops will be reordered to be outside all the element loops, and the element loops will all be
+2188 inside the tile loops.
+2189 If the vector clause appears on the loop construct, the vector clause is applied to the element
+2190 loops. If the gang clause appears on the loop construct, the gang clause is applied to the tile
+2191 loops. If the worker clause appears on the loop construct, the worker clause is applied to the
+2192 element loops if no vector clause appears, and to the tile loops otherwise.
+2193 2.9.9 device type clause
+2194 The device_type clause is described in Section 2.4 Device-Specific Clauses.
+2195 2.9.10 private clause
+2196 The private clause on a loop construct specifies that a copy of each item in var-list will be
+2197 created. If the body of the loop is executed in vector-partitioned mode, a copy of the item is created
+2198 for each thread associated with each vector lane. If the body of the loop is executed in worker2199 partitioned vector-single mode, a copy of the item is created for each worker and shared across the
+2200 set of threads associated with all the vector lanes of that worker. Otherwise, a copy of the item is
+2201 created for each gang in all dimensions and shared across the set of threads associated with all the
+2202 vector lanes of all the workers of that gang.
+2203 Restrictions
+2204 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in private
+2205 clauses.
+2206 H H
+2207 Examples
+2208
+2209 • In the example below, tmp is private to each worker of every gang but shared across all the
+2210 vector lanes of a worker.
+2211 !$acc parallel
+2212 !$acc loop gang
+2213 do k = 1, n
+2214 !$acc loop worker private(tmp)
+2215 do j = 1, n
+2216 !a single vector lane in each gang and worker assigns to tmp
+2217 tmp = b(j,k) + c(j,k)
+2218 !$acc loop vector
+2219 do i = 1, n
+2220 !all vector lanes use the result of the above update to tmp
+2221 a(i,j,k) = a(i,j,k) + tmp/div
+62
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2222 enddo
+2223 enddo
+2224 enddo
+2225 !$acc end parallel
+2226 • In the example below, tmp is private to each gang in every dimension.
+2227 !$acc parallel num_gangs(3,50,150)
+2228 !$acc loop gang(dim:3)
+2229 do k = 1, n
+2230 !$acc loop gang(dim:2) private(tmp)
+2231 do j = 1, n
+2232 !all gangs along dimension 1 execute in gang redundant mode and
+2233 !assign to tmp which is private to each gang in all dimensions
+2234 tmp = b(j,k) + c(j,k)
+2235 !$acc loop gang(dim:1)
+2236 do i = 1, n
+2237 a(i,j,k) = a(i,j,k) + tmp/div
+2238 enddo
+2239 enddo
+2240 enddo
+2241 !$acc end parallel
+2242 N N
+2243 2.9.11 reduction clause
+2244 The reduction clause specifies a reduction operator and one or more vars. For each reduction
+2245 var, a private copy is created in the same manner as for a private clause on the loop construct,
+2246 and initialized for that operator; see the table in Section 2.5.15 reduction clause. After the loop, the
+2247 values for each thread are combined using the specified reduction operator, and the result combined
+2248 with the value of the original var and stored in the original var. If the original var is not private,
+2249 this update occurs by the end of the compute region, and any access to the original var is undefined
+2250 within the compute region. Otherwise, the update occurs at the end of the loop. If the reduction
+2251 var is an array or subarray, the reduction operation is logically equivalent to applying that reduction
+2252 operation to each array element of the array or subarray individually. If the reduction var is a com2253 posite variable, the reduction operation is logically equivalent to applying that reduction operation
+2254 to each member of the composite variable individually.
+2255 If a variable is involved in a reduction that spans multiple nested loops where two or more of those
+2256 loops have associated loop directives, a reduction clause containing that variable must appear
+2257 on each of those loop directives.
+2258 Restrictions
+2259 • A var in a reduction clause must be a scalar variable name, an aggregate variable name,
+2260 an array element, or a subarray (refer to Section 2.7.1).
+2261 • Reduction clauses on nested constructs for the same reduction var must have the same reduc2262 tion operator.
+2263 • Every var in a reduction clause appearing on an orphaned loop construct must be private.
+2264 • The restrictions for a reduction clause on a compute construct listed in in Section 2.5.15
+2265 reduction clause also apply to a reduction clause on a loop construct.
+63
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2266 • See Section 2.17.1 Optional Arguments for discussion of Fortran optional arguments in
+2267 reduction clauses.
+2268 • See Section 2.6.2 Variables with Implicitly Determined Data Attributes for a restriction re2269 quiring certain loop reduction variables to have explicit data clauses on their parent compute
+2270 constructs.
+2271 • A reduction clause may not appear on a loop directive that has a gang clause with a
+2272 dim: argument whose value is greater than 1.
+2273 • A reduction clause may not appear on a loop directive that has a gang clause and
+2274 is within a compute construct that has a num_gangs clause with more than one explicit
+2275 argument.
+2276 H H
+2277 Examples
+2278
+2279 • x is not private at the loop directive below, so its reduction normally updates x at the end
+2280 of the parallel region, where gangs synchronize. When possible, the implementation might
+2281 choose to partially update x at the loop exit instead, or fully if num_gangs(1) were added
+2282 to the parallel directive. However, portable applications cannot rely on such early up2283 dates, so accesses to x are undefined within the parallel region outside the loop.
+2284 int x = 0;
+2285 #pragma acc parallel copy(x)
+2286 {
+2287 // gang -shared x undefined
+2288 #pragma acc loop gang worker vector reduction(+:x)
+2289 for (int i = 0; i < I; ++i)
+2290 x += 1; // vector -private x modified
+2291 // gang -shared x undefined
+2292 } // gang -shared x updated for gang/worker/vector reduction
+2293 // x = I
+2294 • x is private at each of the innermost two loop directives below, so each of their reductions
+2295 updates x at the loop’s exit. However, x is not private at the outer loop directive, so its
+2296 reduction updates x by the end of the parallel region instead.
+2297 int x = 0;
+2298 #pragma acc parallel copy(x)
+2299 {
+2300 // gang -shared x undefined
+2301 #pragma acc loop gang reduction(+:x)
+2302 for (int i = 0; i < I; ++i) {
+2303 #pragma acc loop worker reduction(+:x)
+2304 for (int j = 0; j < J; ++j) {
+2305 #pragma acc loop vector reduction(+:x)
+2306 for (int k = 0; k < K; ++k) {
+2307 x += 1; // vector -private x modified
+2308 } // worker -private x updated for vector reduction
+2309 } // gang -private x updated for worker reduction
+2310 }
+64
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2311 // gang -shared x undefined
+2312 } // gang -shared x updated for gang reduction
+2313 // x = I * J * K
+2314 • At each loop directive below, x is private and y is not private due to the data clauses on
+2315 the parallel directive. Thus, each reduction updates x at the loop exit, but each reduction
+2316 updates y by the end of the parallel region instead.
+2317 int x = 0, y = 0;
+2318 #pragma acc parallel firstprivate(x) copy(y)
+2319 {
+2320 // gang -private x = 0; gang -shared y undefined
+2321 #pragma acc loop seq reduction(+:x,y)
+2322 for (int i = 0; i < I; ++i) {
+2323 x += 1; y += 2; // loop -private x and y modified
+2324 } // gang -private x updated for trivial seq reduction
+2325 // gang -private x = I; gang -shared y undefined
+2326 #pragma acc loop worker reduction(+:x,y)
+2327 for (int i = 0; i < I; ++i) {
+2328 x += 1; y += 2; // worker -private x and y modified
+2329 } // gang -private x updated for worker reduction
+2330 // gang -private x = 2 * I; gang -shared y undefined
+2331 #pragma acc loop vector reduction(+:x,y)
+2332 for (int i = 0; i < I; ++i) {
+2333 x += 1; y += 2; // vector -private x and y modified
+2334 } // gang -private x updated for vector reduction
+2335 // gang -private x = 3 * I; gang -shared y undefined
+2336 } // gang -shared y updated for gang/seq/worker/vector reductions
+2337 // x = 0; y = 3 * I * 2
+2338 • The examples below are equivalent. That is, the reduction clause on the combined con2339 struct applies to the loop construct but implies a copy clause on the parallel construct. Thus,
+2340 x is not private at the loop directive, so the reduction updates x by the end of the parallel
+2341 region.
+2342 int x = 0;
+2343 #pragma acc parallel loop worker reduction(+:x)
+2344 for (int i = 0; i < I; ++i) {
+2345 x += 1; // worker -private x modified
+2346 } // gang -shared x updated for gang/worker reduction
+2347 // x = I
+2348
+2349 int x = 0;
+2350 #pragma acc parallel copy(x)
+2351 {
+2352 // gang -shared x undefined
+2353 #pragma acc loop worker reduction(+:x)
+2354 for (int i = 0; i < I; ++i) {
+2355 x += 1; // worker -private x modified
+2356 }
+2357 // gang -shared x undefined
+2358 } // gang -shared x updated for gang/worker reduction
+2359 // x = I
+65
+The OpenACC
+R API Version 3.3 2.9. Loop Construct
+2360 • If the implementation treats the auto clause below as independent, the loop executes in
+2361 gang-partitioned mode and thus examines every element of arr once to compute arr’s max2362 imum. However, if the implementation treats auto as seq, the gangs redundantly compute
+2363 arr’s maximum, but the combined result is still arr’s maximum. Either way, because x is
+2364 not private at the loop directive, the reduction updates x by the end of the parallel region.
+2365 int x = 0;
+2366 const int *arr = /*array of I values*/;
+2367 #pragma acc parallel copy(x)
+2368 {
+2369 // gang -shared x undefined
+2370 #pragma acc loop auto gang reduction(max:x)
+2371 for (int i = 0; i < I; ++i) {
+2372 // complex loop body
+2373 x = x < arr[i] ? arr[i] : x; // gang - or loop -private
+2374 // x modified
+2375 }
+2376 // gang -shared x undefined
+2377 } // gang -shared x updated for gang or gang/seq reduction
+2378 // x = arr maximum
+2379 • The following example is the same as the previous one except that the reduction operator is
+2380 now +. While gang-partitioned mode sums the elements of arr once, gang-redundant mode
+2381 sums them once per gang, producing a result many times arr’s sum. This example shows
+2382 that, for some reduction operators, combining auto, gang, and reduction is typically
+2383 non-portable.
+2384 int x = 0;
+2385 const int *arr = /*array of I values*/;
+2386 #pragma acc parallel copy(x)
+2387 {
+2388 // gang -shared x undefined
+2389 #pragma acc loop auto gang reduction(+:x)
+2390 for (int i = 0; i < I; ++i) {
+2391 // complex loop body
+2392 x += arr[i]; // gang or loop -private x modified
+2393 }
+2394 // gang -shared x undefined
+2395 } // gang -shared x updated for gang or gang/seq reduction
+2396 // x = arr sum possibly times number of gangs
+2397 • At the following loop directive, x and z are private, so the loop reductions are not across
+2398 gangs even though the loop is gang-partitioned. Nevertheless, the reduction clause on the
+2399 loop directive is important as the loop is also vector-partitioned. These reductions are only
+2400 partial reductions relative to the full set of values computed by the loop, so the reduction
+2401 clause is needed on the parallel directive to reduce across gangs.
+2402 int x = 0, y = 0;
+2403 #pragma acc parallel copy(x) reduction(+:x,y)
+2404 {
+2405 int z = 0;
+2406 #pragma acc loop gang vector reduction(+:x,z)
+2407 for (int i = 0; i < I; ++i) {
+2408 x += 1; z += 2; // vector -private x and z modified
+66
+The OpenACC
+R API Version 3.3 2.10. Cache Directive
+2409 } // gang -private x and z updated for vector reduction
+2410 y += z; // gang -private y modified
+2411 } // gang -shared x and y updated for gang reduction
+2412 // x = I; y = I * 2
+2413 N N
+2414

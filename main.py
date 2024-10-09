@@ -47,7 +47,7 @@ def compile_and_run_test(test_code):
     with open(test_file_path, 'w', encoding='utf-8') as file:
         file.write(test_code)
 
-    base_name = os.path.splitext(os.path.basename(test_file_path))
+    base_name = os.path.splitext(os.path.basename(test_file_path))[0]
     build_path = os.path.join('build', base_name)
 
     compile_command = f"nvc -acc -Minfo=all -o {build_path} {test_file_path}"

@@ -3,4 +3,4 @@ langchain_community
 streamlit
 langchain_nvidia_ai_endpoints
 torch
-
+faiss-gpu
